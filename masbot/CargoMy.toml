@@ -1,0 +1,10 @@
+[package]
+name = "masbot"
+version = "0.1.0"
+authors = ["Maspenguin <maspenguin@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+log = "0.4.0"
+env_logger = "0.7.1"
+serenity = {version = "0.7", features = ["cache","framework","standard_framework","voice"]}

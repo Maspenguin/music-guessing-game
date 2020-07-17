@@ -1,0 +1,12 @@
+[package]
+name = "masbot"
+version = "0.1.0"
+authors = ["Maspenguin <maspenguin@gmail.com>"]
+edition = "2018"
+[dependencies.serenity]
+version = "0.8"
+features = ["cache", "framework", "standard_framework", "voice", "http", "rustls_backend"]
+[dependencies]
+serde = "1.0.104"
+serde_json = "1.0"
+rand = "0.7"
