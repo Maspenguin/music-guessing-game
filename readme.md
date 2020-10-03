@@ -1,5 +1,5 @@
 # Music Guessing Game
-This is a music guessing game it is run for multiple players by a bot using the chat service, Discord.
+This is a music guessing game it is run for multiple players by a bot using the chat service Discord.
 It was designed with video game music and soundtracks in mind.
 ## JSON Writer
 The JSON writer is used to generate a JSON file for a particular youtube playlist. The JSON file will then contain an entry for every track with the soundtrack name and the video URL.
