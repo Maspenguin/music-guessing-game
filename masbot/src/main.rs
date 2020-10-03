@@ -5,17 +5,25 @@ use std::fs::File;
 use std::io::Read;
 use serde::{Serialize, Deserialize};
 
-use rand::Rng;
+// use rand::Rng;
+use rand::seq::SliceRandom;
 use serde_json;
+use std::char;
 
 use serenity::client::bridge::voice::ClientVoiceManager;
 
 use serenity::{
     model::{channel::Message, gateway::Ready},
+    framework::standard::{
+        Args, CommandResult,
+        macros::{command},
+    },
     Result as SerenityResult,
     prelude::*,
     voice
 };
+
+// use white_rabbit::{Utc, Scheduler, DateResult, Duration};
 
 struct VoiceManager;
 
@@ -30,21 +38,27 @@ struct Handler {
 
 struct State {
     map: HashMap<String,String>,
-    remember: String
+    players: HashMap<String, PlayerData>,
+    track_map: HashMap<String, Vec<TrackData>>,
+    remember: String,
+    timer: i32,
+    round_track: Option<TrackData>,
+    round_game_answer: String,
+    round_track_answer: String
 }
 
 //#[derive(Serialize)]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct TrackData {
     name: String,
     game: String,
     url: String
 }
 
-#[derive(Deserialize, Debug)]
-struct User {
-    fingerprint: String,
-    location: String,
+// #[derive(Deserialize, Debug)]
+struct PlayerData {
+    last_guess: String,
+    score: i32
 }
 
 impl EventHandler for Handler {
@@ -56,13 +70,24 @@ impl EventHandler for Handler {
     fn message(&self, mut ctx: Context, msg: Message) {
         //let mut state = self.state.lock().unwrap(); 
         if msg.author.name != "Masbot" {
-            let mut tokens: Vec<_> = msg.content.trim().split_whitespace().map(|x| x.to_string()).collect();
-            println!("{:?}",tokens);
             let mut state = self.state.lock().unwrap();
+            //if the player is not already in the players map, instantiate a new player
+            if !state.players.get(&msg.author.name).is_some() {
+                let player = PlayerData {
+                    last_guess: "".to_string(),
+                    score: 0
+                };
+                state.players.insert(msg.author.name.clone(), player);
+            }
+
+            let mut tokens: Vec<String> = msg.content.trim().split_whitespace().map(|x| x.to_string()).collect();
+            println!("{:?}",tokens);
+            
             // substitute variables
             for i in 0..tokens.len() {  
                 if let Some(val) = state.map.get(&tokens[i]) {
                     tokens[i] = val.clone();
+                    
                 }
             }
             for i in 0..tokens.len() {
@@ -125,23 +150,90 @@ impl EventHandler for Handler {
                     play(&mut ctx, &msg, next_token.to_string())
                 }                
             }
-            if tokens[0] == ".start" {
-                let mut rng = rand::thread_rng();
-                let track_num = rng.gen_range(0, 800);
 
+            if tokens[0] == ".g" {       
+                if let Some(next_token) = tokens.get(1) {
+                    //(get_mut gets mutable access to the player)
+                    state.players.get_mut(&msg.author.name).unwrap().last_guess = next_token.to_string();
+                    
+                    println!("Player: {:?}", msg.author.name);
+                    println!("Game selected: {:?}", state.players.get(&msg.author.name).unwrap().last_guess);
+                }                
+            }
+            // if tokens[0] == ".newplayer" {
+            //     let player = PlayerData {
+            //         last_guess: "".to_string(),
+            //         score: 0
+            //     };
+            //     state.players.insert(msg.author.name.clone(), player);
+            // }
+            
+            if tokens[0] == ".start" {
                 let mut file = File::open("tracks.json").unwrap();
                 let mut data = String::new();
                 file.read_to_string(&mut data).unwrap();
-                println!("Data: {}",data);
+                // println!("Data: {}",data);
                
                 //let track: TrackData =  serde_json::from_reader(file).unwrap();
                 let tracks : Vec<TrackData> = serde_json::from_str(&data).unwrap();
-            
-                let mut track_name = &tracks.get(track_num).unwrap().name;
-                let mut track_game = &tracks.get(track_num).unwrap().game;
-                let mut track_url = &tracks.get(track_num).unwrap().url;
+                println!("Tracks: {}", tracks.len());
+
+                let mut track_map: HashMap<String, Vec<TrackData>> = HashMap::new();
+                //populate track_map based on the list of all tracks (do this once)
+                for i in 0..tracks.len() {
+                    let game_optional = track_map.get_mut(&tracks.get(i).unwrap().game);
+                    match game_optional {
+                        Some(game) => game.push(tracks.get(i).unwrap().clone()),
+                        None => {
+                            let mut new_track_list = Vec::new();
+                            new_track_list.push(tracks.get(i).unwrap().clone());
+                            track_map.insert(tracks.get(i).unwrap().game.clone(), new_track_list);
+                        }
+                    }
+                }
+                // println!("Tracks: {:?}", state.games);
+                let track_map_copy = track_map.clone();
+                let mut rng = rand::thread_rng();
+                //select the game choioces
+                let game_vec: Vec<&String> = track_map_copy.keys().collect();
+    
+                let game_choices: Vec<&&String> = game_vec.choose_multiple(&mut rng, 8).collect();
+                println!("Choose: {:?}", game_choices);
+                //select the game
+                let selected_game = game_choices.choose(&mut rng).clone().unwrap();
+                //select the track choices
+                let track_vec: Vec<TrackData> = track_map_copy.get(&selected_game.to_string()).unwrap().clone();
+                let track_choices: Vec<&TrackData> = track_vec.choose_multiple(&mut rng, 8).collect();
+                println!("Choose: {:?}", track_choices);
+                //select the track
+                let track = track_choices.choose(&mut rng).cloned().cloned().unwrap();
+                // let track = state.round_track.as_ref().unwrap();
+                let track_name = &track.name;
+                println!("Track_name: {}", track_name);
+                let track_game = &track.game;
+                println!("Track_game: {}", track_game);
+                let track_url = &track.url;
+                println!("Track_url: {}", track_url);
            
-                play(&mut ctx, &msg, track_url.to_string())      
+                play(&mut ctx, &msg, track_url.to_string());
+                let mut games_message = "Enter a game: \n".to_string();
+                let mut letter_val = 65 as u8;
+                for game in &game_choices {
+                    if game == selected_game {
+                        state.round_game_answer = (letter_val as char).to_string();
+                        println!("Correct: {}", state.round_game_answer);
+                    }
+                    games_message.push(letter_val as char);
+                    games_message += ": ";
+                    games_message += game;
+                    games_message += "\n";
+
+                    letter_val += 1;
+                }
+                if let Err(why) = msg.channel_id.say(&ctx.http, games_message) {
+                    println!("Error sending message: {:?}", why);
+                }
+                state.round_track = Some(track);
             }
         }
     }
@@ -176,7 +268,7 @@ fn main() {
     // Create a new instance of the Client, logging in as a bot. This will
     // automatically prepend your bot token with "Bot ", which is a requirement
     // by Discord for bot users.
-    let mut client = Client::new(&token, Handler {state: Mutex::new(State{map: HashMap::new(), remember: "".to_string()})}).expect("Err creating client");
+    let mut client = Client::new(&token, Handler {state: Mutex::new(State{map: HashMap::new(), players: HashMap::new(),  track_map: HashMap::new(), remember: "".to_string(), timer: 100, round_track: None, round_game_answer: "".to_string(), round_track_answer: "".to_string()})}).expect("Err creating client");
 
     {
         let mut data = client.data.write();
@@ -260,7 +352,7 @@ fn play(ctx: &mut Context, msg: &Message, url: String) {
                 return;
             },
         };
-       
+        handler.stop();
         handler.play(source);
 
         check_msg(msg.channel_id.say(&ctx.http, "Playing song"));
@@ -274,4 +366,3 @@ fn check_msg(result: SerenityResult<Message>) {
         println!("Error sending message: {:?}", why);
     }
 }
-

@@ -9,3 +9,4 @@
 (?P<game>Celeste) Original Soundtrack - .* - (?P<track>.*)
 (?P<game>Celeste) B-Sides - .* - .* - (?P<track>.*)
 - (?P<track>.*) - (?P<game>Plok)
+(?P<game>Fez) - Original Game Soundtrack - (?P<track>.*) \[HD\]

@@ -37,13 +37,13 @@ def main():
         video_info = video["snippet"]
         video_title = video_info["title"]
         url = "https://youtu.be/"+video_info["resourceId"]["videoId"]
-        # print(video["description"])
         for game_exp in game_exp_list:
             exp = re.compile(game_exp, re.IGNORECASE)
             s = exp.search(video_title)
             if s:
                 track_dict = {"name": s.group('track'), "game": s.group('game'), "url": url}
                 track_list.append(track_dict)
+                print(track_dict)
                 break
 
     with open('../masbot/tracks.json', 'w') as json_file:
