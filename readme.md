@@ -10,7 +10,8 @@ When the bot is running it will respond to certain commands in the chat.
 
 ".join" will make the bot join the voice channel that the user is presently in.
 
-".start" will start the game, the bot will select and play a track through the voice channel. The players then have to guess what it is.
+".start" or ".next" will start the next round, the bot will select and play a track through the voice channel. The players then have to guess what it is.
 
-".g [answer]" will submit [answer] as the players guess for the soundtrack name.
-Currently, the bot does not respond to answers.
+".a [answer]" will submit [answer] as the players guess.
+".g" and ".t" can also be used to submit answers
+The players should submit the letter corresponding to the correct answer.

@@ -112,7 +112,7 @@ impl EventHandler for Handler {
             if tokens[0] == ".sleep" {       
                 thread::sleep(Duration::from_secs(5));           
             }
-            if tokens[0] == ".a" {
+            if tokens[0] == ".a" || tokens[0] == ".g" || tokens[0] == ".t"{
                 
                 if let Some(next_token) = tokens.get(1) {
                     let mut state = self.state.lock().unwrap();
@@ -131,7 +131,7 @@ impl EventHandler for Handler {
             //     state.players.insert(msg.author.name.clone(), player);
             // }
             
-            if tokens[0] == ".n" {
+            if tokens[0] == ".start" || tokens[0] == ".s" || tokens[0] == ".next" || tokens[0] == ".n" {
                 let mut file = File::open("tracks.json").unwrap();
                 let mut data = String::new();
                 file.read_to_string(&mut data).unwrap();
