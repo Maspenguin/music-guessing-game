@@ -9,7 +9,10 @@ use serde::{Serialize, Deserialize};
 use rand::seq::SliceRandom;
 use serde_json;
 use std::char;
-
+use std::thread;
+use std::time::Duration;
+// futures = "0.3.6"
+// use futures::executor::block_on;
 use serenity::client::bridge::voice::ClientVoiceManager;
 
 use serenity::{
@@ -41,10 +44,10 @@ struct State {
     players: HashMap<String, PlayerData>,
     track_map: HashMap<String, Vec<TrackData>>,
     remember: String,
-    timer: i32,
-    round_track: Option<TrackData>,
-    round_game_answer: String,
-    round_track_answer: String
+    timer: i32
+    // round_track: Option<TrackData>,
+    // round_game_answer: String,
+    // round_track_answer: String
 }
 
 //#[derive(Serialize)]
@@ -70,78 +73,33 @@ impl EventHandler for Handler {
     fn message(&self, mut ctx: Context, msg: Message) {
         //let mut state = self.state.lock().unwrap(); 
         if msg.author.name != "Masbot" {
-            let mut state = self.state.lock().unwrap();
+            
             //if the player is not already in the players map, instantiate a new player
-            if !state.players.get(&msg.author.name).is_some() {
-                let player = PlayerData {
-                    last_guess: "".to_string(),
-                    score: 0
-                };
-                state.players.insert(msg.author.name.clone(), player);
+            
+            {   
+                let mut state = self.state.lock().unwrap();
+                if !state.players.get(&msg.author.name).is_some() {
+                    let player = PlayerData {
+                        last_guess: "".to_string(),
+                        score: 0
+                    };
+                    state.players.insert(msg.author.name.clone(), player);
+                }
             }
-
             let mut tokens: Vec<String> = msg.content.trim().split_whitespace().map(|x| x.to_string()).collect();
             println!("{:?}",tokens);
             
             // substitute variables
-            for i in 0..tokens.len() {  
-                if let Some(val) = state.map.get(&tokens[i]) {
-                    tokens[i] = val.clone();
-                    
+            {
+                let mut state = self.state.lock().unwrap();
+                for i in 0..tokens.len() {  
+                    if let Some(val) = state.map.get(&tokens[i]) {
+                        tokens[i] = val.clone();
+                        
+                    }
                 }
             }
-            for i in 0..tokens.len() {
-                if tokens[i] == "=" {
-                    if let Some(prev_token) = tokens.get(i-1) {
-                        let value_1: String = prev_token.parse().unwrap();
-                        if let Some(next_token) = tokens.get(i+1) {
-                            let value_2: String = next_token.parse().unwrap();
-                            state.map.insert(value_1,value_2);
-                            println!("Map: {:?}", state.map);
-                        }
-                    }
-                } 
-                if tokens[i] == "+" {
-                    if let Some(prev_token) = tokens.get(i-1) {
-                        let value_1: i32 = prev_token.parse().unwrap();
-                        if let Some(next_token) = tokens.get(i+1) {
-                            let value_2: i32 = next_token.parse().unwrap();
-                            if let Err(why) = msg.channel_id.say(&ctx.http, value_1+value_2) {
-                                println!("Error sending message: {:?}", why);
-                            }
-                        }
-                    }
-                }
 
-                if tokens[i] == "*" {
-                    if let Some(prev_token) = tokens.get(i-1) {
-                        let value_1: i32 = prev_token.parse().unwrap();
-                        if let Some(next_token) = tokens.get(i+1) {
-                            let value_2: i32 = next_token.parse().unwrap();
-                            if let Err(why) = msg.channel_id.say(&ctx.http, value_1*value_2) {
-                                println!("Error sending message: {:?}", why);
-                            }
-                        }
-                    }
-                }
-            }
-            if tokens[0] == ".remember" {
-                if let Some(next_token) = tokens.get(1) {
-                    state.remember = next_token.to_string();
-                }
-            }
-            if tokens[0] == ".recall" {
-                if let Err(why) = msg.channel_id.say(&ctx.http, state.remember.to_string()) {
-                    println!("Error sending message: {:?}", why);
-                }
-            }
-            if tokens[0] == ".say" {
-                if let Some(next_token) = tokens.get(1) {
-                    if let Err(why) = msg.channel_id.say(&ctx.http, next_token.to_string()) {
-                        println!("Error sending message: {:?}", why);
-                    }
-                }
-            }
             if tokens[0] == ".join" {
                 join(&mut ctx, &msg);
             }
@@ -151,14 +109,19 @@ impl EventHandler for Handler {
                 }                
             }
 
-            if tokens[0] == ".g" {       
+            if tokens[0] == ".sleep" {       
+                thread::sleep(Duration::from_secs(5));           
+            }
+            if tokens[0] == ".a" {
+                
                 if let Some(next_token) = tokens.get(1) {
+                    let mut state = self.state.lock().unwrap();
                     //(get_mut gets mutable access to the player)
                     state.players.get_mut(&msg.author.name).unwrap().last_guess = next_token.to_string();
                     
                     println!("Player: {:?}", msg.author.name);
-                    println!("Game selected: {:?}", state.players.get(&msg.author.name).unwrap().last_guess);
-                }                
+                    println!("Answer selected: {:?}", state.players.get(&msg.author.name).unwrap().last_guess);
+                }
             }
             // if tokens[0] == ".newplayer" {
             //     let player = PlayerData {
@@ -168,7 +131,7 @@ impl EventHandler for Handler {
             //     state.players.insert(msg.author.name.clone(), player);
             // }
             
-            if tokens[0] == ".start" {
+            if tokens[0] == ".n" {
                 let mut file = File::open("tracks.json").unwrap();
                 let mut data = String::new();
                 file.read_to_string(&mut data).unwrap();
@@ -206,22 +169,25 @@ impl EventHandler for Handler {
                 let track_choices: Vec<&TrackData> = track_vec.choose_multiple(&mut rng, 8).collect();
                 println!("Choose: {:?}", track_choices);
                 //select the track
-                let track = track_choices.choose(&mut rng).cloned().cloned().unwrap();
+                let selected_track = track_choices.choose(&mut rng).cloned().cloned().unwrap();
                 // let track = state.round_track.as_ref().unwrap();
-                let track_name = &track.name;
-                println!("Track_name: {}", track_name);
-                let track_game = &track.game;
-                println!("Track_game: {}", track_game);
-                let track_url = &track.url;
-                println!("Track_url: {}", track_url);
+
+                // let track_name = &selected_track.name;
+                println!("Track_name: {}", &selected_track.name);
+                // let track_game = &selected_track.game;
+                println!("Track_game: {}", &selected_track.game);
+                // let track_url = &selected_track.url;
+                println!("Track_url: {}", &selected_track.url);
            
-                play(&mut ctx, &msg, track_url.to_string());
+                play(&mut ctx, &msg, selected_track.url.to_string());
+                //Game name quiz
                 let mut games_message = "Enter a game: \n".to_string();
                 let mut letter_val = 65 as u8;
+                let mut game_answer = "?".to_string();//(The letter allias)
                 for game in &game_choices {
                     if game == selected_game {
-                        state.round_game_answer = (letter_val as char).to_string();
-                        println!("Correct: {}", state.round_game_answer);
+                        game_answer = (letter_val as char).to_string();
+                        println!("Correct: {}", game_answer);
                     }
                     games_message.push(letter_val as char);
                     games_message += ": ";
@@ -233,7 +199,133 @@ impl EventHandler for Handler {
                 if let Err(why) = msg.channel_id.say(&ctx.http, games_message) {
                     println!("Error sending message: {:?}", why);
                 }
-                state.round_track = Some(track);
+                // {
+                //     let mut state = self.state.lock().unwrap();
+                //     state.round_track = Some(selected_track);
+                // }
+                println!("30 seconds left");
+                if let Err(why) = msg.channel_id.say(&ctx.http, "30 seconds left.") {
+                    println!("Error sending message: {:?}", why);
+                }
+                thread::sleep(Duration::from_secs(10));  
+                println!("20 seconds left");
+                if let Err(why) = msg.channel_id.say(&ctx.http, "20 seconds left.") {
+                    println!("Error sending message: {:?}", why);
+                }
+                thread::sleep(Duration::from_secs(10));  
+                println!("10 seconds left");
+                if let Err(why) = msg.channel_id.say(&ctx.http, "10 seconds left.") {
+                    println!("Error sending message: {:?}", why);
+                }
+                thread::sleep(Duration::from_secs(5));  
+                println!("5 seconds left");
+                if let Err(why) = msg.channel_id.say(&ctx.http, "5 seconds left.") {
+                    println!("Error sending message: {:?}", why);
+                }
+                thread::sleep(Duration::from_secs(5));  
+                println!("Times up!");
+                if let Err(why) = msg.channel_id.say(&ctx.http, "Times up!") {
+                    println!("Error sending message: {:?}", why);
+                }
+                if let Err(why) = msg.channel_id.say(&ctx.http, "Correct answer was: ".to_string() + selected_game) {
+                    println!("Error sending message: {:?}", why);
+                }
+                {
+                    let mut state = self.state.lock().unwrap();
+                    let players = &mut state.players;
+                    for (player_name, player_details) in players.iter_mut() {
+                        println!("Player name: {:?}", player_name);
+                        println!("Lastguess: {:?}", player_details.last_guess);
+                        if player_details.last_guess == game_answer {
+                            let message = player_name.to_string() + " was correct!";
+                            if let Err(why) = msg.channel_id.say(&ctx.http, message) {
+                                println!("Error sending message: {:?}", why);
+                            }
+                            player_details.score += 1;
+                            let message = player_name.to_string() + ": " + &player_details.score.to_string();
+                            if let Err(why) = msg.channel_id.say(&ctx.http, message) {
+                                println!("Error sending message: {:?}", why);
+                            }
+                            
+                        }
+                    }
+                }
+                //TODO! previous guess carries over if no other guess, should I change this?
+                //Track name quiz
+                let mut track_message = "Enter a track title: \n".to_string();
+                let mut letter_val = 65 as u8;
+                let mut track_answer = "?".to_string(); //(the letter alias)
+                for track in &track_choices {
+                    if track.name == selected_track.name {
+                        track_answer = (letter_val as char).to_string();
+                        println!("Correct: {}", game_answer);
+                    }
+                    track_message.push(letter_val as char);
+                    track_message += ": ";
+                    track_message += &track.name;
+                    track_message += "\n";
+
+                    letter_val += 1;
+                }
+                if let Err(why) = msg.channel_id.say(&ctx.http, track_message) {
+                    println!("Error sending message: {:?}", why);
+                }
+                println!("30 seconds left");
+                if let Err(why) = msg.channel_id.say(&ctx.http, "30 seconds left.") {
+                    println!("Error sending message: {:?}", why);
+                }
+                thread::sleep(Duration::from_secs(10));  
+                println!("20 seconds left");
+                if let Err(why) = msg.channel_id.say(&ctx.http, "20 seconds left.") {
+                    println!("Error sending message: {:?}", why);
+                }
+                thread::sleep(Duration::from_secs(10));  
+                println!("10 seconds left");
+                if let Err(why) = msg.channel_id.say(&ctx.http, "10 seconds left.") {
+                    println!("Error sending message: {:?}", why);
+                }
+                thread::sleep(Duration::from_secs(5));  
+                println!("5 seconds left");
+                if let Err(why) = msg.channel_id.say(&ctx.http, "5 seconds left.") {
+                    println!("Error sending message: {:?}", why);
+                }
+                thread::sleep(Duration::from_secs(5));  
+                println!("Times up!");
+                if let Err(why) = msg.channel_id.say(&ctx.http, "Times up!") {
+                    println!("Error sending message: {:?}", why);
+                }
+                if let Err(why) = msg.channel_id.say(&ctx.http, "Correct answer was: ".to_string() + &selected_track.name) {
+                    println!("Error sending message: {:?}", why);
+                }
+                {
+                    let mut state = self.state.lock().unwrap();
+                    let answer = track_answer.clone();
+                    let players = &mut state.players;
+                    for (player_name, player_details) in players.iter_mut() {
+                        println!("Player name: {:?}", player_name);
+                        println!("Lastguess: {:?}", player_details.last_guess);
+                        if player_details.last_guess == answer {
+                            let message = player_name.to_string() + " was correct!";
+                            if let Err(why) = msg.channel_id.say(&ctx.http, message) {
+                                println!("Error sending message: {:?}", why);
+                            }
+                            player_details.score += 1;
+                            let message = player_name.to_string() + ": " + &player_details.score.to_string();
+                            if let Err(why) = msg.channel_id.say(&ctx.http, message) {
+                                println!("Error sending message: {:?}", why);
+                            }
+                            
+                        }
+                    }
+                }
+                // match game_optional {
+                //     Some(game) => game.push(tracks.get(i).unwrap().clone()),
+                //     None => {
+                //         let mut new_track_list = Vec::new();
+                //         new_track_list.push(tracks.get(i).unwrap().clone());
+                //         track_map.insert(tracks.get(i).unwrap().game.clone(), new_track_list);
+                //     }
+                // }
             }
         }
     }
@@ -268,7 +360,7 @@ fn main() {
     // Create a new instance of the Client, logging in as a bot. This will
     // automatically prepend your bot token with "Bot ", which is a requirement
     // by Discord for bot users.
-    let mut client = Client::new(&token, Handler {state: Mutex::new(State{map: HashMap::new(), players: HashMap::new(),  track_map: HashMap::new(), remember: "".to_string(), timer: 100, round_track: None, round_game_answer: "".to_string(), round_track_answer: "".to_string()})}).expect("Err creating client");
+    let mut client = Client::new(&token, Handler {state: Mutex::new(State{map: HashMap::new(), players: HashMap::new(),  track_map: HashMap::new(), remember: "".to_string(), timer: 100})}).expect("Err creating client");
 
     {
         let mut data = client.data.write();
