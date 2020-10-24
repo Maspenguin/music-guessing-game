@@ -8,10 +8,15 @@ If you want to use this script yourself, you will also need to setup your own AP
 ## Masbot 
 When the bot is running it will respond to certain commands in the chat.
 
+".signin" will list the user as a player, they will be send direct messages from the bot allowing the player to submit their answer.
+
+".signoff" will remove the user as a player in the game.
+
 ".join" will make the bot join the voice channel that the user is presently in.
 
 ".start" or ".next" will start the next round, the bot will select and play a track through the voice channel. The players then have to guess what it is.
 
-".a [answer]" will submit [answer] as the players guess.
-".g" and ".t" can also be used to submit answers
+".g [answer]" will submit [answer] as the players guess for the game name.
+".t [answer]" will submit [answer] as the players guess for the track name.
 The players should submit the letter corresponding to the correct answer.
+Players should submit the game name first, so they are given choices for the track name.

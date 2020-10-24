@@ -44,10 +44,11 @@ struct State {
     players: HashMap<String, PlayerData>,
     track_map: HashMap<String, Vec<TrackData>>,
     remember: String,
-    timer: i32
+    timer: i32,
     // round_track: Option<TrackData>,
-    // round_game_answer: String,
-    // round_track_answer: String
+    // round_game_answer: String,//Letter
+    // round_track_answer: String,//Letter
+    round_track_message: String
 }
 
 //#[derive(Serialize)]
@@ -61,7 +62,8 @@ struct TrackData {
 // #[derive(Deserialize, Debug)]
 struct PlayerData {
     user: serenity::model::user::User,
-    last_guess: String,
+    game_guess: String,
+    track_guess: String,
     score: i32
 }
 
@@ -101,33 +103,60 @@ impl EventHandler for Handler {
                     println!("Error sending message: {:?}", why);
                 }
             }
-            if tokens[0] == ".signin" {  
+            if tokens[0] == ".signin" || tokens[0] == ".si"{  
                 //if the player is not already in the players map, instantiate a new player
                 let mut state = self.state.lock().unwrap();
                 if !state.players.get(&msg.author.name).is_some() {
                     let player = PlayerData {
                         user: msg.author.clone(),
-                        last_guess: "".to_string(),
+                        game_guess: "".to_string(),
+                        track_guess: "".to_string(),
                         score: 0
                     };
                     state.players.insert(msg.author.name.clone(), player);
                 }
+                if let Err(why) = &msg.author.direct_message(&ctx, |m| { m.content("Welcome!") }) {
+                    println!("Error sending message: {:?}", why);
+                }
             }
-            if tokens[0] == ".signoff" {  
-
+            if tokens[0] == ".signoff" || tokens[0] == ".so" {  
+                let mut state = self.state.lock().unwrap();
+                state.players.remove(&msg.author.name);
+                if let Err(why) = &msg.author.direct_message(&ctx, |m| { m.content("Good bye.") }) {
+                    println!("Error sending message: {:?}", why);
+                }
             }
-            if tokens[0] == ".sleep" {       
-                thread::sleep(Duration::from_secs(5));           
+            if tokens[0] == ".g" {
+                //only let them answer once
+                let mut state = self.state.lock().unwrap();
+                println!("Current: {:?}", state.players.get(&msg.author.name).unwrap().game_guess);
+                //TODO players can bypass by entering .g ? ,maybe I should use a flag to determine if the player has answered yet?
+                if state.players.get(&msg.author.name).unwrap().game_guess == "?" {
+                    if let Some(next_token) = tokens.get(1) {
+                        
+                        //(get_mut gets mutable access to the player)
+                        if let Some(author) = state.players.get_mut(&msg.author.name) {
+                            author.game_guess = next_token.to_string();
+                            println!("Player: {:?}", msg.author.name);
+                            println!("Game guess: {:?}", state.players.get(&msg.author.name).unwrap().game_guess);
+                        }
+                        else {
+                            println!("Unregistered player: {:?}", msg.author.name);
+                        }
+                    }
+                    if let Err(why) = &msg.author.direct_message(&ctx, |m| { m.content(&state.round_track_message) }) {
+                        println!("Error sending message: {:?}", why);
+                    }
+                }
             }
-            if tokens[0] == ".a" || tokens[0] == ".g" || tokens[0] == ".t"{
-                
+            if tokens[0] == ".t"{
                 if let Some(next_token) = tokens.get(1) {
                     let mut state = self.state.lock().unwrap();
                     //(get_mut gets mutable access to the player)
                     if let Some(author) = state.players.get_mut(&msg.author.name) {
-                        author.last_guess = next_token.to_string();
+                        author.track_guess = next_token.to_string();
                         println!("Player: {:?}", msg.author.name);
-                        println!("Answer selected: {:?}", state.players.get(&msg.author.name).unwrap().last_guess);
+                        println!("Track Guess: {:?}", state.players.get(&msg.author.name).unwrap().track_guess);
                     }
                     else {
                         println!("Unregistered player: {:?}", msg.author.name);
@@ -151,7 +180,6 @@ impl EventHandler for Handler {
                 //let track: TrackData =  serde_json::from_reader(file).unwrap();
                 let tracks : Vec<TrackData> = serde_json::from_str(&data).unwrap();
                 println!("Tracks: {}", tracks.len());
-
                 let mut track_map: HashMap<String, Vec<TrackData>> = HashMap::new();
                 //populate track_map based on the list of all tracks (do this once)
                 for i in 0..tracks.len() {
@@ -175,6 +203,20 @@ impl EventHandler for Handler {
                 println!("Choose: {:?}", game_choices);
                 //select the game
                 let selected_game = game_choices.choose(&mut rng).clone().unwrap();
+
+                //reset player answers
+                {
+                    let mut state = self.state.lock().unwrap();
+                    let players = &mut state.players;
+                    for (_, player_details) in players.iter_mut() {
+                        player_details.track_guess = "?".to_string();
+                        player_details.game_guess = "?".to_string();
+                        println!("After reset: {:?}", player_details.track_guess);
+                        println!("After reset: {:?}", player_details.game_guess);
+                    }
+                 
+                }
+  
                 //select the track choices
                 let track_vec: Vec<TrackData> = track_map_copy.get(&selected_game.to_string()).unwrap().clone();
                 let track_choices: Vec<&TrackData> = track_vec.choose_multiple(&mut rng, 8).collect();
@@ -198,7 +240,7 @@ impl EventHandler for Handler {
                 for game in &game_choices {
                     if game == selected_game {
                         game_answer = (letter_val as char).to_string();
-                        println!("Correct: {}", game_answer);
+                        println!("Game: {}", game_answer);
                     }
                     games_message.push(letter_val as char);
                     games_message += ": ";
@@ -207,6 +249,10 @@ impl EventHandler for Handler {
 
                     letter_val += 1;
                 }
+                // {
+                //     let mut state = self.state.lock().unwrap();
+                //     state.round_game_answer = game_answer;
+                // }
                 //TODO loop through and send to each player
                 {
                     let mut state = self.state.lock().unwrap();
@@ -217,14 +263,45 @@ impl EventHandler for Handler {
                         }
                     }
                 }
-                // if let Err(why) = msg.channel_id.say(&ctx.http, games_message) {
-                //     println!("Error sending message: {:?}", why);
-                // }
                 
                 // {
                 //     let mut state = self.state.lock().unwrap();
                 //     state.round_track = Some(selected_track);
                 // }
+                //Track name quiz
+                let mut track_message = "Enter a track title: \n".to_string();
+                let mut letter_val = 65 as u8;
+                let mut track_answer = "?".to_string(); //(the letter alias)
+                for track in &track_choices {
+                    if track.name == selected_track.name {
+                        track_answer = (letter_val as char).to_string();
+                        println!("Track: {}", track_answer);
+                    }
+                    track_message.push(letter_val as char);
+                    track_message += ": ";
+                    track_message += &track.name;
+                    track_message += "\n";
+
+                    letter_val += 1;
+                }
+                {
+                    let mut state = self.state.lock().unwrap();
+                    state.round_track_message = track_message;
+                }
+
+
+
+                println!("60 seconds left");
+                {
+                    let mut state = self.state.lock().unwrap();
+                    let players = &mut state.players;
+                    for (_, player_details) in players.iter() {
+                        if let Err(why) = player_details.user.direct_message(&ctx, |m| { m.content("60 seconds left.") }) {
+                            println!("Error sending message: {:?}", why);
+                        }
+                    }
+                }
+                thread::sleep(Duration::from_secs(30));  
                 println!("30 seconds left");
                 {
                     let mut state = self.state.lock().unwrap();
@@ -235,29 +312,18 @@ impl EventHandler for Handler {
                         }
                     }
                 }
-                thread::sleep(Duration::from_secs(10));  
-                println!("20 seconds left");
+                thread::sleep(Duration::from_secs(15));  
+                println!("15 seconds left");
                 {
                     let mut state = self.state.lock().unwrap();
                     let players = &mut state.players;
                     for (_, player_details) in players.iter() {
-                        if let Err(why) = player_details.user.direct_message(&ctx, |m| { m.content("20 seconds left.") }) {
+                        if let Err(why) = player_details.user.direct_message(&ctx, |m| { m.content("15 seconds left.") }) {
                             println!("Error sending message: {:?}", why);
                         }
                     }
                 }
                 thread::sleep(Duration::from_secs(10));  
-                println!("10 seconds left");
-                {
-                    let mut state = self.state.lock().unwrap();
-                    let players = &mut state.players;
-                    for (_, player_details) in players.iter() {
-                        if let Err(why) = player_details.user.direct_message(&ctx, |m| { m.content("10 seconds left.") }) {
-                            println!("Error sending message: {:?}", why);
-                        }
-                    }
-                }
-                thread::sleep(Duration::from_secs(5));  
                 println!("5 seconds left");
                 {
                     let mut state = self.state.lock().unwrap();
@@ -278,15 +344,35 @@ impl EventHandler for Handler {
                         if let Err(why) = player_details.user.direct_message(&ctx, |m| { m.content("Times up!.") }) {
                             println!("Error sending message: {:?}", why);
                         }
-                        if let Err(why) = player_details.user.direct_message(&ctx, |m| { m.content("Correct answer was: ".to_string() + selected_game) }) {
+                        if let Err(why) = player_details.user.direct_message(&ctx, |m| { m.content("Correct game answer was: ".to_string() + selected_game) }) {
+                            println!("Error sending message: {:?}", why);
+                        }
+                        if let Err(why) = player_details.user.direct_message(&ctx, |m| { m.content("Correct track answer was: ".to_string() + &selected_track.name) }) {
                             println!("Error sending message: {:?}", why);
                         }
                     }
-
+                //     for (_, player_details) in players.iter() {
+                //         if let Err(why) = player_details.user.direct_message(&ctx, |m| { m.content("Times up!.") }) {
+                //             println!("Error sending message: {:?}", why);
+                //         }
+            
+                //     }
                     for (player_name, player_details) in players.iter_mut() {
                         println!("Player name: {:?}", player_name);
-                        println!("Lastguess: {:?}", player_details.last_guess);
-                        if player_details.last_guess == game_answer {
+                        println!("Gameguess: {:?}", player_details.game_guess);
+                        println!("Trackguess: {:?}", player_details.track_guess);
+                        if player_details.game_guess == game_answer {
+                            let message = player_name.to_string() + " was correct!";
+                            if let Err(why) = msg.channel_id.say(&ctx.http, message) {
+                                println!("Error sending message: {:?}", why);
+                            }
+                            player_details.score += 1;
+                            let message = player_name.to_string() + ": " + &player_details.score.to_string();
+                            if let Err(why) = msg.channel_id.say(&ctx.http, message) {
+                                println!("Error sending message: {:?}", why);
+                            }  
+                        }
+                        if player_details.track_guess == track_answer {
                             let message = player_name.to_string() + " was correct!";
                             if let Err(why) = msg.channel_id.say(&ctx.http, message) {
                                 println!("Error sending message: {:?}", why);
@@ -296,111 +382,10 @@ impl EventHandler for Handler {
                             if let Err(why) = msg.channel_id.say(&ctx.http, message) {
                                 println!("Error sending message: {:?}", why);
                             }
-                            
                         }
                     }
                 }
-                //TODO! previous guess carries over if no other guess, should I change this?
-                //Track name quiz
-                let mut track_message = "Enter a track title: \n".to_string();
-                let mut letter_val = 65 as u8;
-                let mut track_answer = "?".to_string(); //(the letter alias)
-                for track in &track_choices {
-                    if track.name == selected_track.name {
-                        track_answer = (letter_val as char).to_string();
-                        println!("Correct: {}", game_answer);
-                    }
-                    track_message.push(letter_val as char);
-                    track_message += ": ";
-                    track_message += &track.name;
-                    track_message += "\n";
-
-                    letter_val += 1;
-                }
-                {
-                    let mut state = self.state.lock().unwrap();
-                    let players = &mut state.players;
-                    for (_, player_details) in players.iter() {
-                        if let Err(why) = player_details.user.direct_message(&ctx, |m| { m.content(&track_message) }) {
-                            println!("Error sending message: {:?}", why);
-                        }
-                    }
-                }
-                println!("30 seconds left");
-                {
-                    let mut state = self.state.lock().unwrap();
-                    let players = &mut state.players;
-                    for (_, player_details) in players.iter() {
-                        if let Err(why) = player_details.user.direct_message(&ctx, |m| { m.content("30 seconds left.") }) {
-                            println!("Error sending message: {:?}", why);
-                        }
-                    }
-                }
-                thread::sleep(Duration::from_secs(10));  
-                println!("20 seconds left");
-                {
-                    let mut state = self.state.lock().unwrap();
-                    let players = &mut state.players;
-                    for (_, player_details) in players.iter() {
-                        if let Err(why) = player_details.user.direct_message(&ctx, |m| { m.content("20 seconds left.") }) {
-                            println!("Error sending message: {:?}", why);
-                        }
-                    }
-                }
-                thread::sleep(Duration::from_secs(10));  
-                println!("10 seconds left");
-                {
-                    let mut state = self.state.lock().unwrap();
-                    let players = &mut state.players;
-                    for (_, player_details) in players.iter() {
-                        if let Err(why) = player_details.user.direct_message(&ctx, |m| { m.content("10 seconds left.") }) {
-                            println!("Error sending message: {:?}", why);
-                        }
-                    }
-                }
-                thread::sleep(Duration::from_secs(5));  
-                println!("5 seconds left");
-                {
-                    let mut state = self.state.lock().unwrap();
-                    let players = &mut state.players;
-                    for (_, player_details) in players.iter() {
-                        if let Err(why) = player_details.user.direct_message(&ctx, |m| { m.content("5 seconds left.") }) {
-                            println!("Error sending message: {:?}", why);
-                        }
-                    }
-                }
-                thread::sleep(Duration::from_secs(5));  
-
-                {
-                    let mut state = self.state.lock().unwrap();
-                    let answer = track_answer.clone();
-                    let players = &mut state.players;
-                    println!("Times up!");
-                    for (_, player_details) in players.iter() {
-                        if let Err(why) = player_details.user.direct_message(&ctx, |m| { m.content("Times up!.") }) {
-                            println!("Error sending message: {:?}", why);
-                        }
-                        if let Err(why) = player_details.user.direct_message(&ctx, |m| { m.content("Correct answer was: ".to_string() + &selected_track.name) }) {
-                            println!("Error sending message: {:?}", why);
-                        }
-                    }
-                    for (player_name, player_details) in players.iter_mut() {
-                        println!("Player name: {:?}", player_name);
-                        println!("Lastguess: {:?}", player_details.last_guess);
-                        if player_details.last_guess == answer {
-                            let message = player_name.to_string() + " was correct!";
-                            if let Err(why) = msg.channel_id.say(&ctx.http, message) {
-                                println!("Error sending message: {:?}", why);
-                            }
-                            player_details.score += 1;
-                            let message = player_name.to_string() + ": " + &player_details.score.to_string();
-                            if let Err(why) = msg.channel_id.say(&ctx.http, message) {
-                                println!("Error sending message: {:?}", why);
-                            }
-                            
-                        }
-                    }
-                }
+                
                 // match game_optional {
                 //     Some(game) => game.push(tracks.get(i).unwrap().clone()),
                 //     None => {
@@ -443,7 +428,18 @@ fn main() {
     // Create a new instance of the Client, logging in as a bot. This will
     // automatically prepend your bot token with "Bot ", which is a requirement
     // by Discord for bot users.
-    let mut client = Client::new(&token, Handler {state: Mutex::new(State{map: HashMap::new(), players: HashMap::new(),  track_map: HashMap::new(), remember: "".to_string(), timer: 100})}).expect("Err creating client");
+    let mut client = Client::new(&token, Handler {
+        state: Mutex::new(
+            State{
+                map: HashMap::new(), 
+                players: HashMap::new(),  
+                track_map: HashMap::new(), 
+                remember: "".to_string(), 
+                timer: 100, 
+                round_track_message: "".to_string()
+            }
+        )
+    }).expect("Err creating client");
 
     {
         let mut data = client.data.write();
