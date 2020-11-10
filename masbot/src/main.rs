@@ -253,7 +253,6 @@ impl EventHandler for Handler {
                 //     let mut state = self.state.lock().unwrap();
                 //     state.round_game_answer = game_answer;
                 // }
-                //TODO loop through and send to each player
                 {
                     let mut state = self.state.lock().unwrap();
                     let players = &mut state.players;
@@ -291,17 +290,17 @@ impl EventHandler for Handler {
 
 
 
-                println!("60 seconds left");
-                {
-                    let mut state = self.state.lock().unwrap();
-                    let players = &mut state.players;
-                    for (_, player_details) in players.iter() {
-                        if let Err(why) = player_details.user.direct_message(&ctx, |m| { m.content("60 seconds left.") }) {
-                            println!("Error sending message: {:?}", why);
-                        }
-                    }
-                }
-                thread::sleep(Duration::from_secs(30));  
+                // println!("60 seconds left");
+                // {
+                //     let mut state = self.state.lock().unwrap();
+                //     let players = &mut state.players;
+                //     for (_, player_details) in players.iter() {
+                //         if let Err(why) = player_details.user.direct_message(&ctx, |m| { m.content("60 seconds left.") }) {
+                //             println!("Error sending message: {:?}", why);
+                //         }
+                //     }
+                // }
+                // thread::sleep(Duration::from_secs(30));  
                 println!("30 seconds left");
                 {
                     let mut state = self.state.lock().unwrap();
@@ -334,14 +333,14 @@ impl EventHandler for Handler {
                         }
                     }
                 }
-                thread::sleep(Duration::from_secs(5));  
+                thread::sleep(Duration::from_secs(5));
                
                 {
                     let mut state = self.state.lock().unwrap();
                     let players = &mut state.players;
                     println!("Times up!");
                     for (_, player_details) in players.iter() {
-                        if let Err(why) = player_details.user.direct_message(&ctx, |m| { m.content("Times up!.") }) {
+                        if let Err(why) = player_details.user.direct_message(&ctx, |m| { m.content("Times up!") }) {
                             println!("Error sending message: {:?}", why);
                         }
                         if let Err(why) = player_details.user.direct_message(&ctx, |m| { m.content("Correct game answer was: ".to_string() + selected_game) }) {
@@ -351,39 +350,39 @@ impl EventHandler for Handler {
                             println!("Error sending message: {:?}", why);
                         }
                     }
-                //     for (_, player_details) in players.iter() {
-                //         if let Err(why) = player_details.user.direct_message(&ctx, |m| { m.content("Times up!.") }) {
-                //             println!("Error sending message: {:?}", why);
-                //         }
-            
-                //     }
+                    //     for (_, player_details) in players.iter() {
+                    //         if let Err(why) = player_details.user.direct_message(&ctx, |m| { m.content("Times up!.") }) {
+                    //             println!("Error sending message: {:?}", why);
+                    //         }
+                
+                    //     }
+                    let mut scoreboard_message = "Scores:".to_string();
+                    scoreboard_message += "\n";
                     for (player_name, player_details) in players.iter_mut() {
                         println!("Player name: {:?}", player_name);
                         println!("Gameguess: {:?}", player_details.game_guess);
                         println!("Trackguess: {:?}", player_details.track_guess);
+                        let mut round_score = 0;
                         if player_details.game_guess == game_answer {
-                            let message = player_name.to_string() + " was correct!";
-                            if let Err(why) = msg.channel_id.say(&ctx.http, message) {
-                                println!("Error sending message: {:?}", why);
-                            }
                             player_details.score += 1;
-                            let message = player_name.to_string() + ": " + &player_details.score.to_string();
-                            if let Err(why) = msg.channel_id.say(&ctx.http, message) {
-                                println!("Error sending message: {:?}", why);
-                            }  
+                            round_score += 1;
                         }
                         if player_details.track_guess == track_answer {
-                            let message = player_name.to_string() + " was correct!";
-                            if let Err(why) = msg.channel_id.say(&ctx.http, message) {
-                                println!("Error sending message: {:?}", why);
-                            }
                             player_details.score += 1;
-                            let message = player_name.to_string() + ": " + &player_details.score.to_string();
-                            if let Err(why) = msg.channel_id.say(&ctx.http, message) {
-                                println!("Error sending message: {:?}", why);
-                            }
+                            round_score += 1;
                         }
+                        scoreboard_message += &player_name.to_string();
+                        scoreboard_message += ": ";
+                        scoreboard_message += &player_details.score.to_string();
+                        scoreboard_message += " (+";
+                        scoreboard_message += &round_score.to_string();
+                        scoreboard_message += ")";
+                        scoreboard_message += "\n";
+
                     }
+                    if let Err(why) = msg.channel_id.say(&ctx.http, scoreboard_message) {
+                        println!("Error sending message: {:?}", why);
+                    }  
                 }
                 
                 // match game_optional {
