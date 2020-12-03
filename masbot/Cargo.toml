@@ -5,16 +5,16 @@ authors = ["Maspenguin <maspenguin@gmail.com>"]
 edition = "2018"
 
 [dependencies.serenity]
-git = "https://github.com/Maspenguin/serenity"
+git = "https://github.com/serenity-rs/serenity"
 branch = "current"
 version = "0.9.1"
 default-features = false
 features = ["builder", "client", "gateway", "http", "cache", "model", "utils", "voice", "rustls_backend"]
 
 [dependencies.songbird]
-git = "https://github.com/Maspenguin/serenity"
+git = "https://github.com/serenity-rs/songbird"
 branch = "current"
-version = "0.1.0"
+
 
 [dependencies]
 serde = "1.0.104"

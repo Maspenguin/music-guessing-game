@@ -1,4 +1,4 @@
-use std::{env, sync::Arc};
+use std::{env};
 use std::sync::Mutex;
 use std::collections::HashMap;
 use std::fs::File;
@@ -9,11 +9,10 @@ use serde::{Serialize, Deserialize};
 use rand::seq::SliceRandom;
 use serde_json;
 use std::char;
-use std::thread;
 use std::time::Duration;
+use std::time::Instant;
 use async_std::task;
 // futures = "0.3.6"
-// use futures::executor::block_on;
 
 use serenity::{
     async_trait,
@@ -33,8 +32,6 @@ struct State {
     map: HashMap<String,String>,
     players: HashMap<String, PlayerData>,
     track_map: HashMap<String, Vec<TrackData>>,
-    remember: String,
-    timer: i32,
     // round_track: Option<TrackData>,
     // round_game_answer: String,//Letter
     // round_track_answer: String,//Letter
@@ -77,7 +74,7 @@ impl EventHandler for Handler {
             
             // substitute variables
             {
-                let mut state = self.state.lock().unwrap();
+                let state = self.state.lock().unwrap();
                 for i in 0..tokens.len() {  
                     if let Some(val) = state.map.get(&tokens[i]) {
                         tokens[i] = val.clone();
@@ -157,6 +154,7 @@ impl EventHandler for Handler {
                 }
 
             }
+            //todo, make its so you can select an answer using emotes?
             if tokens[0] == ".t"{
                 if let Some(next_token) = tokens.get(1) {
                     let mut state = self.state.lock().unwrap();
@@ -170,38 +168,16 @@ impl EventHandler for Handler {
                 }
             }
             
-            if tokens[0] == ".start" || tokens[0] == ".s" || tokens[0] == ".next" || tokens[0] == ".n" {
-                let mut file = File::open("tracks.json").unwrap();
-                let mut data = String::new();
-                file.read_to_string(&mut data).unwrap();
-                // println!("Data: {}",data);
-               
-                //let track: TrackData =  serde_json::from_reader(file).unwrap();
-                let tracks : Vec<TrackData> = serde_json::from_str(&data).unwrap();
-                println!("Tracks: {}", tracks.len());
-                let mut track_map: HashMap<String, Vec<TrackData>> = HashMap::new();
-                //populate track_map based on the list of all tracks (do this once)
-                for i in 0..tracks.len() {
-                    let game_optional = track_map.get_mut(&tracks.get(i).unwrap().game);
-                    match game_optional {
-                        Some(game) => game.push(tracks.get(i).unwrap().clone()),
-                        None => {
-                            let mut new_track_list = Vec::new();
-                            new_track_list.push(tracks.get(i).unwrap().clone());
-                            track_map.insert(tracks.get(i).unwrap().game.clone(), new_track_list);
-                        }
-                    }
-                }
-                // println!("Tracks: {:?}", state.games);
-                let track_map_copy = track_map.clone();
-                
-                //select the game choioces
+            if tokens[0] == ".start" || tokens[0] == ".s" || tokens[0] == ".next" || tokens[0] == ".n" {             
+                let track_map_copy = get_track_map_copy(self);
+         
+                //select the game choices
                 let game_vec: Vec<&String> = track_map_copy.keys().collect();
                 let game_choices: Vec<&&String> = game_vec.choose_multiple(&mut rand::thread_rng(), 8).collect();
                 println!("Choose: {:?}", game_choices);
                 //select the game
                 let selected_game = game_choices.choose(&mut rand::thread_rng()).clone().unwrap();
-
+                
                 //reset player answers
                 {
                     let mut state = self.state.lock().unwrap();
@@ -220,18 +196,12 @@ impl EventHandler for Handler {
                 println!("Choose: {:?}", track_choices);
                 //select the track
                 let selected_track = track_choices.choose(&mut rand::thread_rng()).cloned().cloned().unwrap();
-                // let track = state.round_track.as_ref().unwrap();
-                
-                // let track_name = &selected_track.name;
                 println!("Track_name: {}", &selected_track.name);
-                // let track_game = &selected_track.game;
                 println!("Track_game: {}", &selected_track.game);
-                // let track_url = &selected_track.url;
                 println!("Track_url: {}", &selected_track.url);
-                
                 play(&mut ctx, &msg, selected_track.url.to_string()).await;
-
-                //Game name quiz
+            
+                //Construct game name question message
                 let mut games_message = "Enter a game: \n".to_string();
                 let mut letter_val = 65 as u8;
                 let mut game_answer = "?".to_string();//(The letter allias)
@@ -247,10 +217,9 @@ impl EventHandler for Handler {
 
                     letter_val += 1;
                 }
-
+                //Send game name question message
                 let mut direct_messages = vec!();
                 {
-  
                     let mut state = self.state.lock().unwrap();
                     let players = &mut state.players;
 
@@ -262,9 +231,8 @@ impl EventHandler for Handler {
                     }
                 }
                 send_direct_messages(&ctx, &direct_messages).await;
-
-                
-                //Track name quiz
+            
+                //Construct track name question message
                 let mut track_message = "Enter a track title: \n".to_string();
                 let mut letter_val = 65 as u8;
                 let mut track_answer = "?".to_string(); //(the letter alias)
@@ -277,77 +245,39 @@ impl EventHandler for Handler {
                     track_message += ": ";
                     track_message += &track.name;
                     track_message += "\n";
-
                     letter_val += 1;
                 }
+                //Store track name question message for later 
                 {
                     let mut state = self.state.lock().unwrap();
                     state.round_track_message = track_message;
                 }
-
-
-                //TODO make better timer system, user controlled maybe
-
-                // println!("60 seconds left");
-                // let mut direct_messages = vec!();
-                // {
-                //     let mut state = self.state.lock().unwrap();
-                //     let players = &mut state.players;
-                    
-                //     for (_, player_details) in players.iter() {
-                //         direct_messages.push(DirectMessage {
-                //             user: player_details.user.clone(),
-                //             message: "30 seconds left.".to_string()
-                //         });
-                //     }
-                // }
-                // send_direct_messages(&ctx, &direct_messages).await;
-                // task::sleep(Duration::from_secs(30)).await;
-                println!("30 seconds left");
+                
+                //Send initial time left messages to each player
+                let timer_duration = 30;
                 let mut direct_messages = vec!();
                 {
                     let mut state = self.state.lock().unwrap();
                     let players = &mut state.players;
-                    
                     for (_, player_details) in players.iter() {
                         direct_messages.push(DirectMessage {
                             user: player_details.user.clone(),
-                            message: "30 seconds left.".to_string()
+                            message: "Time left: ".to_string() + &timer_duration.to_string()
                         });
                     }
-                }
-                send_direct_messages(&ctx, &direct_messages).await;
-                task::sleep(Duration::from_secs(15)).await;
-                println!("15 seconds left");
-                let mut direct_messages = vec!();
-                {
-                    let mut state = self.state.lock().unwrap();
-                    let players = &mut state.players;
-                    
-                    for (_, player_details) in players.iter() {
-                        direct_messages.push(DirectMessage {
-                            user: player_details.user.clone(),
-                            message: "15 seconds left.".to_string()
-                        });
+                } 
+                let mut timer_messages = send_timer_messages(&ctx, &direct_messages).await;
+                let start_time = Instant::now();
+                //Periodically update the time left messages sent to each player
+                while start_time.elapsed().as_secs_f32() < timer_duration as f32 {
+                    task::sleep(Duration::from_secs(1)).await;
+                    for message in &mut timer_messages {
+                        let time_left = (timer_duration as f32 - start_time.elapsed().as_secs_f32()).round();
+                        message.edit(&ctx, |m| { m.content("Time left: ".to_string() + &time_left.to_string()) }).await.unwrap();
                     }
                 }
-                send_direct_messages(&ctx, &direct_messages).await;
-                task::sleep(Duration::from_secs(10)).await;
-                println!("5 seconds left");
-                let mut direct_messages = vec!();
-                {
-                    let mut state = self.state.lock().unwrap();
-                    let players = &mut state.players;
-                    
-                    for (_, player_details) in players.iter() {
-                        direct_messages.push(DirectMessage {
-                            user: player_details.user.clone(),
-                            message: "5 seconds left.".to_string()
-                        });
-                    }
-                }
-                send_direct_messages(&ctx, &direct_messages).await;
-                task::sleep(Duration::from_secs(5)).await;
+                
+                //Times up, send results
                 let mut direct_messages = vec!();
                 {
                     let mut state = self.state.lock().unwrap();
@@ -399,15 +329,7 @@ impl EventHandler for Handler {
                 }
                 if let Err(why) = msg.channel_id.say(&ctx.http, scoreboard_message).await {
                     println!("Error sending message: {:?}", why);
-                }  
-                // match game_optional {
-                //     Some(game) => game.push(tracks.get(i).unwrap().clone()),
-                //     None => {
-                //         let mut new_track_list = Vec::new();
-                //         new_track_list.push(tracks.get(i).unwrap().clone());
-                //         track_map.insert(tracks.get(i).unwrap().game.clone(), new_track_list);
-                //     }
-                // }
+                }
             }
         }
     }
@@ -427,18 +349,30 @@ impl EventHandler for Handler {
     }
 }
 
+async fn send_timer_messages(ctx: &Context, direct_messages: &[DirectMessage]) -> Vec<Message> {
+    let mut timer_messages = Vec::new();
+    for direct_message in direct_messages {
+        if let Ok(message) = direct_message.user.direct_message(&ctx, |m| { m.content(&direct_message.message) }).await {
+            timer_messages.push(message);
+        }
+        // let message = direct_message.user.direct_message(&ctx, |m| { m.content(&direct_message.message) }).await.unwrap();
+        // println!("message {:?}", message);
+        // //message.unwrap().edit(&ctx, |m| { m.content("bluh") }).await;
+        // timer_messages.push(message);
+    }
+    return timer_messages;
+}
+
 async fn send_direct_messages(ctx: &Context, direct_messages: &[DirectMessage]) {
     for direct_message in direct_messages {
         if let Err(why) = direct_message.user.direct_message(&ctx, |m| { m.content(&direct_message.message) }).await {
             println!("Error sending message: {:?}", why);
-        }  
+        }
     }
 }
 
 #[tokio::main]
 async fn main() {
-
-    
     //let serialized = serde_json::to_string(&point).unwrap();
     // //$Env:RUST_LOG = "info"
     //env_logger::init();
@@ -457,9 +391,7 @@ async fn main() {
             State{
                 map: HashMap::new(), 
                 players: HashMap::new(),  
-                track_map: HashMap::new(), 
-                remember: "".to_string(), 
-                timer: 100, 
+                track_map: HashMap::new(),
                 round_track_message: "".to_string()
             }
         )
@@ -497,13 +429,7 @@ async fn join(ctx: &mut Context, msg: &Message) {
     let manager = songbird::get(ctx).await
     .expect("Songbird Voice client placed in at initialisation.").clone();
 
-    let handler = manager.join(guild_id, connect_to).await;
-    // println!("Connected to {}",handler.channel_id);
-    // if manager.join(guild_id, connect_to).await {
-    //     check_msg(msg.channel_id.say(&ctx.http, &format!("Joined {}", connect_to.mention())).await);
-    // } else {
-    //     check_msg(msg.channel_id.say(&ctx.http, "Error joining the channel").await);
-    // }
+    let _handler = manager.join(guild_id, connect_to).await;
 }
 
 async fn play(ctx: &mut Context, msg: &Message, url: String) {
@@ -533,9 +459,7 @@ async fn play(ctx: &mut Context, msg: &Message, url: String) {
                 return;
             },
         };
-        // handler.stop();
-        handler.play_only_source(source);
-
+        let _track_handle = handler.play_only_source(source);
         check_msg(msg.channel_id.say(&ctx.http, "Playing song").await);
     } else {
         check_msg(msg.channel_id.say(&ctx.http, "Not in a voice channel to play in").await);
@@ -547,4 +471,33 @@ fn check_msg(result: SerenityResult<Message>) {
     if let Err(why) = result {
         println!("Error sending message: {:?}", why);
     }
+}
+
+fn get_track_map_copy(handler: &Handler) -> HashMap<String, Vec<TrackData>> {
+    let mut state = handler.state.lock().unwrap();
+    if state.track_map.is_empty() {
+        let mut file = File::open("tracks.json").unwrap();
+        let mut data = String::new();
+        file.read_to_string(&mut data).unwrap();
+        
+        //let track: TrackData =  serde_json::from_reader(file).unwrap();
+        let tracks : Vec<TrackData> = serde_json::from_str(&data).unwrap();
+        println!("Tracks: {}", tracks.len());
+        let mut track_map: HashMap<String, Vec<TrackData>> = HashMap::new();
+        //populate track_map based on the list of all tracks (do this once)
+        for i in 0..tracks.len() {
+            let game_optional = track_map.get_mut(&tracks.get(i).unwrap().game);
+            match game_optional {
+                Some(game) => game.push(tracks.get(i).unwrap().clone()),
+                None => {
+                    let mut new_track_list = Vec::new();
+                    new_track_list.push(tracks.get(i).unwrap().clone());
+                    track_map.insert(tracks.get(i).unwrap().game.clone(), new_track_list);
+                }
+            }
+        }
+        println!("New track_map");
+        state.track_map = track_map.clone();
+    }
+    return state.track_map.clone();
 }
