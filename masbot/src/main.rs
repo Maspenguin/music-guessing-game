@@ -132,7 +132,6 @@ impl EventHandler for Handler {
                     //TODO players can bypass by entering .g ? ,maybe I should use a flag to determine if the player has answered yet?
                     if state.players.get(&msg.author.name).unwrap().game_guess == "?" {
                         if let Some(next_token) = tokens.get(1) {
-                            
                             //(get_mut gets mutable access to the player)
                             if let Some(author) = state.players.get_mut(&msg.author.name) {
                                 author.game_guess = next_token.to_string().to_uppercase();
@@ -217,21 +216,7 @@ impl EventHandler for Handler {
 
                     letter_val += 1;
                 }
-                //Send game name question message
-                let mut direct_messages = vec!();
-                {
-                    let mut state = self.state.lock().unwrap();
-                    let players = &mut state.players;
-
-                    for (_, player_details) in players.iter() {
-                        direct_messages.push(DirectMessage {
-                            user: player_details.user.clone(),
-                            message: games_message.clone()
-                        });
-                    }
-                }
-                send_direct_messages(&ctx, &direct_messages).await;
-            
+                send_direct_message_to_all(self, &ctx, games_message).await;
                 //Construct track name question message
                 let mut track_message = "Enter a track title: \n".to_string();
                 let mut letter_val = 65 as u8;
@@ -247,6 +232,7 @@ impl EventHandler for Handler {
                     track_message += "\n";
                     letter_val += 1;
                 }
+            
                 //Store track name question message for later 
                 {
                     let mut state = self.state.lock().unwrap();
@@ -255,18 +241,7 @@ impl EventHandler for Handler {
                 
                 //Send initial time left messages to each player
                 let timer_duration = 30;
-                let mut direct_messages = vec!();
-                {
-                    let mut state = self.state.lock().unwrap();
-                    let players = &mut state.players;
-                    for (_, player_details) in players.iter() {
-                        direct_messages.push(DirectMessage {
-                            user: player_details.user.clone(),
-                            message: "Time left: ".to_string() + &timer_duration.to_string()
-                        });
-                    }
-                } 
-                let mut timer_messages = send_timer_messages(&ctx, &direct_messages).await;
+                let mut timer_messages = send_direct_message_to_all(self, &ctx, "Time left: ".to_string() + &timer_duration.to_string()).await;
                 let start_time = Instant::now();
                 //Periodically update the time left messages sent to each player
                 while start_time.elapsed().as_secs_f32() < timer_duration as f32 {
@@ -278,32 +253,13 @@ impl EventHandler for Handler {
                 }
                 
                 //Times up, send results
-                let mut direct_messages = vec!();
-                {
-                    let mut state = self.state.lock().unwrap();
-                    let players = &mut state.players;
-                    println!("Times up!");
-                    for (_, player_details) in players.iter() {
-                        direct_messages.push(DirectMessage {
-                            user: player_details.user.clone(),
-                            message: "Times up!".to_string()
-                        });
-                        direct_messages.push(DirectMessage {
-                            user: player_details.user.clone(),
-                            message: "Correct game answer was: ".to_string() + selected_game
-                        });
-                        direct_messages.push(DirectMessage {
-                            user: player_details.user.clone(),
-                            message: "Correct track answer was: ".to_string() + &selected_track.name
-                        });
-                    }
-                }
-                send_direct_messages(&ctx, &direct_messages).await; 
+                send_direct_message_to_all(self, &ctx, "Times up!".to_string()).await;
+                send_direct_message_to_all(self, &ctx, "Correct game answer was: ".to_string() + selected_game).await;
+                send_direct_message_to_all(self, &ctx, "Correct track answer was: ".to_string() + &selected_track.name).await;
                 let mut scoreboard_message = "Scores:".to_string();  
                 {
                     let mut state = self.state.lock().unwrap();
                     let players = &mut state.players;
-                    
                     scoreboard_message += "\n";
                     for (player_name, player_details) in players.iter_mut() {
                         println!("Player name: {:?}", player_name);
@@ -349,26 +305,29 @@ impl EventHandler for Handler {
     }
 }
 
-async fn send_timer_messages(ctx: &Context, direct_messages: &[DirectMessage]) -> Vec<Message> {
-    let mut timer_messages = Vec::new();
+async fn send_direct_messages(ctx: &Context, direct_messages: &[DirectMessage]) -> Vec<Message> {
+    let mut sent_messages = Vec::new();
     for direct_message in direct_messages {
         if let Ok(message) = direct_message.user.direct_message(&ctx, |m| { m.content(&direct_message.message) }).await {
-            timer_messages.push(message);
+            sent_messages.push(message);
         }
-        // let message = direct_message.user.direct_message(&ctx, |m| { m.content(&direct_message.message) }).await.unwrap();
-        // println!("message {:?}", message);
-        // //message.unwrap().edit(&ctx, |m| { m.content("bluh") }).await;
-        // timer_messages.push(message);
     }
-    return timer_messages;
+    return sent_messages;
 }
 
-async fn send_direct_messages(ctx: &Context, direct_messages: &[DirectMessage]) {
-    for direct_message in direct_messages {
-        if let Err(why) = direct_message.user.direct_message(&ctx, |m| { m.content(&direct_message.message) }).await {
-            println!("Error sending message: {:?}", why);
+async fn send_direct_message_to_all(handler: &Handler, ctx: &Context, message: String) -> Vec<Message> {
+    let mut direct_messages = vec!();
+    {
+        let mut state = handler.state.lock().unwrap();
+        let players = &mut state.players;
+        for (_, player_details) in players.iter() {
+            direct_messages.push(DirectMessage {
+                user: player_details.user.clone(),
+                message: message.to_string()
+            });
         }
     }
+    return send_direct_messages(&ctx, &direct_messages).await;
 }
 
 #[tokio::main]
