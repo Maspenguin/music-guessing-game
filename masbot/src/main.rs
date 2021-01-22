@@ -11,11 +11,13 @@ use serde_json;
 use std::char;
 use std::time::Duration;
 use std::time::Instant;
+// use std::collections::{HashSet,env};
 use async_std::task;
 // futures = "0.3.6"
 
 use serenity::{
     async_trait,
+    // collector::MessageCollectorBuilder,
     model::{channel::Message, gateway::Ready},
     Result as SerenityResult,
     prelude::*,
@@ -200,23 +202,93 @@ impl EventHandler for Handler {
                 println!("Track_url: {}", &selected_track.url);
                 play(&mut ctx, &msg, selected_track.url.to_string()).await;
             
+                // //Construct game name question message
+                // let mut games_message = "Enter a game: \n".to_string();
+                // let mut letter_val = 65 as u8;
+                // let mut game_answer = "?".to_string();//(The letter allias)
+                // for game in &game_choices {
+                //     if game == selected_game {
+                //         game_answer = (letter_val as char).to_string();
+                //         println!("Game answer: {}", game_answer);
+                //     }
+                //     games_message.push(letter_val as char);
+                //     games_message += ": ";
+                //     games_message += game;
+                //     games_message += "\n";
+
+                //     letter_val += 1;
+                // }
+                // let sent_games_messages = send_direct_message_to_all(self, &ctx, games_message).await;
+
+                // async fn foo(ctx: &Context, message: &Message) {
+                //     message.react(ctx, '🇦').await.unwrap();
+                //     message.react(ctx, '🇧').await.unwrap();
+                //     message.react(ctx, '🇨').await.unwrap();
+                //     message.react(ctx, '🇩').await.unwrap();
+                //     message.react(ctx, '🇪').await.unwrap();
+                //     message.react(ctx, '🇫').await.unwrap();
+                //     message.react(ctx, '🇬').await.unwrap();
+                //     message.react(ctx, '🇭').await.unwrap();
+                // }
+
                 //Construct game name question message
-                let mut games_message = "Enter a game: \n".to_string();
-                let mut letter_val = 65 as u8;
+                let mut letter_number = 0;
                 let mut game_answer = "?".to_string();//(The letter allias)
+                let mut all_sent_games_messages = vec!(); 
                 for game in &game_choices {
                     if game == selected_game {
-                        game_answer = (letter_val as char).to_string();
+                        game_answer = (((65+letter_number)as u8) as char).to_string();
                         println!("Game answer: {}", game_answer);
                     }
-                    games_message.push(letter_val as char);
-                    games_message += ": ";
-                    games_message += game;
-                    games_message += "\n";
+                    let mut game_message = "".to_string();
+                    
+                    game_message.push(((65+letter_number) as u8) as char);
+                    game_message += ": ";
+                    game_message += game;
+                    let sent_game_messages = send_direct_message_to_all(self, &ctx, game_message).await;
+                    
+                    // let collector = MessageCollectorBuilder::new(&ctx);
 
-                    letter_val += 1;
+                    let letter_reactions = ['🇦', '🇧', '🇨', '🇩', '🇪', '🇫', '🇬', '🇭'];//\u{1F1E6}
+                    {
+                        let mut futures = vec!();
+                        for message in &sent_game_messages {
+                            futures.push(letter_react(&ctx, message, letter_reactions[letter_number]));
+                        }
+                        futures::future::join_all(futures).await;
+                    }  
+                    all_sent_games_messages.push(sent_game_messages);
+
+                    async fn letter_react(ctx: &Context, message: &Message, letter: char) {
+                        message.react(ctx, letter).await.unwrap();
+                    }
+                    letter_number += 1;
                 }
-                send_direct_message_to_all(self, &ctx, games_message).await;
+                // let sent_games_messages = send_direct_message_to_all(self, &ctx, game_message).await;
+  
+                // {
+                //     let mut futures = vec!();
+                //     for message in &sent_games_messages {
+                //         futures.push(foo(&ctx, message));
+                //     }
+                //     futures::future::join_all(futures).await;
+                // }
+                // {
+                //     let mut futures = vec!();
+                //     for message in &games_messages {
+                //         futures.push(async {
+                //             message.react(&ctx, '🇦').await.unwrap();
+                //             message.react(&ctx, '🇧').await.unwrap();
+                //             message.react(&ctx, '🇨').await.unwrap();
+                //             message.react(&ctx, '🇩').await.unwrap();
+                //             message.react(&ctx, '🇪').await.unwrap();
+                //             message.react(&ctx, '🇫').await.unwrap();
+                //             message.react(&ctx, '🇬').await.unwrap();
+                //             message.react(&ctx, '🇭').await.unwrap();
+                //         });
+                //     }
+                //     futures::future::join_all(futures);
+                // }
                 //Construct track name question message
                 let mut track_message = "Enter a track title: \n".to_string();
                 let mut letter_val = 65 as u8;
@@ -227,9 +299,11 @@ impl EventHandler for Handler {
                         println!("Track answer: {}", track_answer);
                     }
                     track_message.push(letter_val as char);
+                    //track_message += format!(": {}\n", track.name);
                     track_message += ": ";
                     track_message += &track.name;
                     track_message += "\n";
+
                     letter_val += 1;
                 }
             
@@ -245,6 +319,28 @@ impl EventHandler for Handler {
                 let start_time = Instant::now();
                 //Periodically update the time left messages sent to each player
                 while start_time.elapsed().as_secs_f32() < timer_duration as f32 {
+                    // for game_messages in &all_sent_games_messages {
+                    //     for message in game_messages {
+                    //         let users_result = message.reaction_users(&ctx, '🇦', None, None).await;
+                    //         // println!("{:?}", &users.unwrap());
+                    //         if let Ok(users) = users_result {
+                    //             if users.len() > 1 {
+                    //                 //probs going to need this https://docs.rs/serenity/0.9.2/serenity/model/channel/struct.GuildChannel.html#method.await_reaction
+                    //                 let player_name = &users[0].name;//TODO: unsure if this will always get the user
+                    //                 let mut state = self.state.lock().unwrap();
+                    //                 if let Some(author) = state.players.get_mut(player_name) {
+                    //                     author.game_guess = "A".to_string().to_uppercase();
+                    //                 }
+                    //                 else {
+                    //                     println!("Unregistered player: {:?}", msg.author.name);
+                    //                 }
+                    //             }
+                    //         }
+  
+                            
+                    //     }
+                    // }
+   
                     task::sleep(Duration::from_secs(1)).await;
                     for message in &mut timer_messages {
                         let time_left = (timer_duration as f32 - start_time.elapsed().as_secs_f32()).round();
@@ -386,7 +482,7 @@ async fn join(ctx: &mut Context, msg: &Message) {
 
 
     let manager = songbird::get(ctx).await
-    .expect("Songbird Voice client placed in at initialisation.").clone();
+        .expect("Songbird Voice client placed in at initialisation.").clone();
 
     let _handler = manager.join(guild_id, connect_to).await;
 }
@@ -403,7 +499,7 @@ async fn play(ctx: &mut Context, msg: &Message, url: String) {
 
 
     let manager = songbird::get(ctx).await
-    .expect("Songbird Voice client placed in at initialisation.").clone();
+        .expect("Songbird Voice client placed in at initialisation.").clone();
 
     if let Some(handler_lock) = manager.get(guild_id) {
         let mut handler = handler_lock.lock().await;
