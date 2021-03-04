@@ -69,7 +69,6 @@ impl EventHandler for Handler {
     // Event handlers are dispatched through a threadpool, and so multiple
     // events can be dispatched simultaneously.
     async fn message(&self, mut ctx: Context, msg: Message) {
-
         if msg.author.name != "Masbot" {
             let mut tokens: Vec<String> = msg.content.trim().split_whitespace().map(|x| x.to_string()).collect();
             println!("{:?}",tokens);
@@ -84,305 +83,214 @@ impl EventHandler for Handler {
                     }
                 }
             }
-
-            if tokens[0] == ".join" {
-                join(&mut ctx, &msg).await;
-            }
-            if tokens[0] == ".play" {
-                if let Some(next_token) = tokens.get(1) {
-                    play(&mut ctx, &msg, next_token.to_string()).await;
-                    // block_on(play(&mut ctx, &msg, next_token.to_string()));
-                }                
-            }
-            if tokens[0] == ".hey" {  
-                if let Err(why) = msg.author.direct_message(&ctx, |m| { m.content("yo") }).await {
-                    println!("Error sending message: {:?}", why);
-                }
-            }
-            if tokens[0] == ".signin" || tokens[0] == ".si"{  
-                //if the player is not already in the players map, instantiate a new player
-                {
-                    let mut state = self.state.lock().unwrap();
-                    if !state.players.get(&msg.author.name).is_some() {
-                        let player = PlayerData {
-                            user: msg.author.clone(),
-                            game_guess: "".to_string(),
-                            track_guess: "".to_string(),
-                            score: 0
-                        };
-                        state.players.insert(msg.author.name.clone(), player);
+            match msg.guild(&ctx.cache).await {
+                Some(_guild) => {
+                    if tokens[0] == ".join" {
+                        join(&mut ctx, &msg).await;
                     }
-                }
-                if let Err(why) = &msg.author.direct_message(&ctx, |m| { m.content("Welcome!") }).await {
-                    println!("Error sending message: {:?}", why);
-                }
-            }
-            if tokens[0] == ".signoff" || tokens[0] == ".so" {  
-                {
-                    let mut state = self.state.lock().unwrap();
-                    state.players.remove(&msg.author.name);
-                }
-                if let Err(why) = &msg.author.direct_message(&ctx, |m| { m.content("Good bye.") }).await {
-                    println!("Error sending message: {:?}", why);
-                }
-            }
-            if tokens[0] == ".g" {
-                //only let them answer once
-                let round_track_message_option = {
-                    let mut state = self.state.lock().unwrap();
-                    println!("Current: {:?}", state.players.get(&msg.author.name).unwrap().game_guess);
-                    //TODO players can bypass by entering .g ? ,maybe I should use a flag to determine if the player has answered yet?
-                    if state.players.get(&msg.author.name).unwrap().game_guess == "?" {
+                    if tokens[0] == ".play" {
                         if let Some(next_token) = tokens.get(1) {
-                            //(get_mut gets mutable access to the player)
-                            if let Some(author) = state.players.get_mut(&msg.author.name) {
-                                author.game_guess = next_token.to_string().to_uppercase();
+                            play(&mut ctx, &msg, next_token.to_string()).await;
+                            // block_on(play(&mut ctx, &msg, next_token.to_string()));
+                        }                
+                    }
+                    if tokens[0] == ".start" || tokens[0] == ".s" || tokens[0] == ".next" || tokens[0] == ".n" {             
+                        let track_map_copy = get_track_map_copy(self);
+                 
+                        //select the game choices
+                        let game_vec: Vec<&String> = track_map_copy.keys().collect();
+                        let game_choices: Vec<&&String> = game_vec.choose_multiple(&mut rand::thread_rng(), 8).collect();
+                        println!("Choose: {:?}", game_choices);
+                        //select the game
+                        let selected_game = game_choices.choose(&mut rand::thread_rng()).clone().unwrap();
+                        
+                        //reset player answers
+                        {
+                            let mut state = self.state.lock().unwrap();
+                            let players = &mut state.players;
+                            for (_, player_details) in players.iter_mut() {
+                                player_details.track_guess = "?".to_string();
+                                player_details.game_guess = "?".to_string();
+                                println!("After reset: {:?}", player_details.track_guess);
+                                println!("After reset: {:?}", player_details.game_guess);
+                            }
+                        }
+        
+                        //select the track choices
+                        let track_vec: Vec<TrackData> = track_map_copy.get(&selected_game.to_string()).unwrap().clone();
+                        let track_choices: Vec<&TrackData> = track_vec.choose_multiple(&mut rand::thread_rng(), 8).collect();
+                        println!("Choose: {:?}", track_choices);
+                        //select the track
+                        let selected_track = track_choices.choose(&mut rand::thread_rng()).cloned().cloned().unwrap();
+                        println!("Track_name: {}", &selected_track.name);
+                        println!("Track_game: {}", &selected_track.game);
+                        println!("Track_url: {}", &selected_track.url);
+                        play(&mut ctx, &msg, selected_track.url.to_string()).await;
+                    
+                        //Construct game name question message
+                        let mut letter_number = 0;
+                        let mut game_answer = "?".to_string();//(The letter allias)
+                        // let mut all_sent_games_messages = vec!(); 
+                        let mut game_message = "Select a game name: \n".to_string();
+                        for game in &game_choices {
+                            if game == selected_game {
+                                game_answer = (((65+letter_number)as u8) as char).to_string();
+                                println!("Game answer: {}", game_answer);
+                            }
+                            game_message.push(((65+letter_number) as u8) as char);
+                            game_message += ": ";
+                            game_message += game;
+                            game_message += "\n";
+                            letter_number += 1;
+                        }
+                        send_direct_message_to_all(self, &ctx, game_message).await;
+        
+                        //Construct track name question message
+                        let mut track_message = "Select a track title: \n".to_string();
+                        let mut letter_number = 0;
+                        // let mut letter_val = 65 as u8;
+                        let mut track_answer = "?".to_string(); //(the letter alias)
+                        for track in &track_choices {
+                            if track.name == selected_track.name {
+                                track_answer = (((65+letter_number)as u8) as char).to_string();
+                                println!("Track answer: {}", track_answer);
+                            }
+                            track_message.push(((65+letter_number) as u8) as char);
+                            //track_message += format!(": {}\n", track.name);
+                            track_message += ": ";
+                            track_message += &track.name;
+                            track_message += "\n";
+        
+                            letter_number += 1;
+                        }
+                        //let sent_track_messages = ...
+        
+                        //Store track name question message for later 
+                        {
+                            let mut state = self.state.lock().unwrap();
+                            state.round_track_message = track_message;
+                        }
+                        
+                        //Send initial time left messages to each player
+                        let timer_duration = 30;
+                        let mut timer_messages = send_direct_message_to_all(self, &ctx, "Time left: ".to_string() + &timer_duration.to_string()).await;
+                        let start_time = Instant::now();
+                        //Periodically update the time left messages sent to each player
+                        while start_time.elapsed().as_secs_f32() < timer_duration as f32 {
+        
+                            task::sleep(Duration::from_secs(1)).await;
+                            for message in &mut timer_messages {
+                                let time_left = (timer_duration as f32 - start_time.elapsed().as_secs_f32()).round();
+                                message.edit(&ctx, |m| { m.content("Time left: ".to_string() + &time_left.to_string()) }).await.unwrap();
+                            }
+                        }
+                        
+                        //Times up, send results
+                        send_direct_message_to_all(self, &ctx, "Times up!".to_string()).await;
+                        send_direct_message_to_all(self, &ctx, "Correct game answer was: ".to_string() + selected_game).await;
+                        send_direct_message_to_all(self, &ctx, "Correct track answer was: ".to_string() + &selected_track.name).await;
+                        let mut scoreboard_message = "Scores:".to_string();  
+                        {
+                            let mut state = self.state.lock().unwrap();
+                            let players = &mut state.players;
+                            scoreboard_message += "\n";
+                            for (player_name, player_details) in players.iter_mut() {
+                                println!("Player name: {:?}", player_name);
+                                println!("Players Game guess: {:?}", player_details.game_guess);
+                                println!("Players Track guess: {:?}", player_details.track_guess);
+                                let mut round_score = 0;
+                                if player_details.game_guess == game_answer {
+                                    player_details.score += 1;
+                                    round_score += 1;
+                                }
+                                if player_details.track_guess == track_answer {
+                                    player_details.score += 1;
+                                    round_score += 1;
+                                }
+                                scoreboard_message += &player_name.to_string();
+                                scoreboard_message += ": ";
+                                scoreboard_message += &player_details.score.to_string();
+                                scoreboard_message += " (+";
+                                scoreboard_message += &round_score.to_string();
+                                scoreboard_message += ")";
+                                scoreboard_message += "\n";
+                            }
+                        }
+                        if let Err(why) = msg.channel_id.say(&ctx.http, scoreboard_message).await {
+                            println!("Error sending message: {:?}", why);
+                        }
+                    }
+                    if tokens[0] == ".signin" || tokens[0] == ".si"{  
+                        //if the player is not already in the players map, instantiate a new player
+                        {
+                            let mut state = self.state.lock().unwrap();
+                            if !state.players.get(&msg.author.name).is_some() {
+                                let player = PlayerData {
+                                    user: msg.author.clone(),
+                                    game_guess: "".to_string(),
+                                    track_guess: "".to_string(),
+                                    score: 0
+                                };
+                                state.players.insert(msg.author.name.clone(), player);
+                            }
+                        }
+                        if let Err(why) = &msg.author.direct_message(&ctx, |m| { m.content("Welcome!") }).await {
+                            println!("Error sending message: {:?}", why);
+                        }
+                    }
+                    if tokens[0] == ".signoff" || tokens[0] == ".so" {  
+                        {
+                            let mut state = self.state.lock().unwrap();
+                            state.players.remove(&msg.author.name);
+                        }
+                        if let Err(why) = &msg.author.direct_message(&ctx, |m| { m.content("Good bye.") }).await {
+                            println!("Error sending message: {:?}", why);
+                        }
+                    }
+                },
+                None => {
+                    //Message was not post in a server i.e. it is from a direct message
+
+
+                    if tokens.len() == 1 && tokens.get(0).unwrap().len() == 1 {
+                        let round_track_message_option = {//if a game answer is selected this is given a value so that the track options are given to the player.
+                            let mut state = self.state.lock().unwrap();
+                            if state.players.get(&msg.author.name).unwrap().game_guess == "?" {//i.e. if game guess has not been selected yet
+                                //(get_mut gets mutable access to the player)
+                                if let Some(author) = state.players.get_mut(&msg.author.name) {
+                                    author.game_guess = tokens.get(0).unwrap().to_string().to_uppercase();
+                                }
+                                else {
+                                    println!("Unregistered player: {:?}", msg.author.name);
+                                }
+                                Some(state.round_track_message.clone())
                             }
                             else {
-                                println!("Unregistered player: {:?}", msg.author.name);
+                                //(get_mut gets mutable access to the player)
+                                if let Some(author) = state.players.get_mut(&msg.author.name) {
+                                    author.track_guess = tokens.get(0).unwrap().to_string().to_uppercase();
+                                }
+                                else {
+                                    println!("Unregistered player: {:?}", msg.author.name);
+                                }
+                                None
+                            }
+                        };
+                        
+                        //send track options to the player
+                        if let Some(round_track_message) = round_track_message_option {
+                            if let Err(why) = &msg.author.direct_message(&ctx, |m| m.content(round_track_message)).await {
+                                println!("Error sending message: {:?}", why);
                             }
                         }
-                        Some(state.round_track_message.clone())
                     }
                     else {
-                        None
-                    }
-                };
-                if let Some(round_track_message) = round_track_message_option {
-                    if let Err(why) = &msg.author.direct_message(&ctx, |m| m.content(round_track_message)).await {
-                        println!("Error sending message: {:?}", why);
-                    }
-                }
-
-            }
-            //todo, make its so you can select an answer using emotes?
-            if tokens[0] == ".t"{
-                if let Some(next_token) = tokens.get(1) {
-                    let mut state = self.state.lock().unwrap();
-                    //(get_mut gets mutable access to the player)
-                    if let Some(author) = state.players.get_mut(&msg.author.name) {
-                        author.track_guess = next_token.to_string().to_uppercase();
-                    }
-                    else {
-                        println!("Unregistered player: {:?}", msg.author.name);
-                    }
-                }
-            }
-            
-            if tokens[0] == ".start" || tokens[0] == ".s" || tokens[0] == ".next" || tokens[0] == ".n" {             
-                let track_map_copy = get_track_map_copy(self);
-         
-                //select the game choices
-                let game_vec: Vec<&String> = track_map_copy.keys().collect();
-                let game_choices: Vec<&&String> = game_vec.choose_multiple(&mut rand::thread_rng(), 8).collect();
-                println!("Choose: {:?}", game_choices);
-                //select the game
-                let selected_game = game_choices.choose(&mut rand::thread_rng()).clone().unwrap();
-                
-                //reset player answers
-                {
-                    let mut state = self.state.lock().unwrap();
-                    let players = &mut state.players;
-                    for (_, player_details) in players.iter_mut() {
-                        player_details.track_guess = "?".to_string();
-                        player_details.game_guess = "?".to_string();
-                        println!("After reset: {:?}", player_details.track_guess);
-                        println!("After reset: {:?}", player_details.game_guess);
-                    }
-                }
-
-                //select the track choices
-                let track_vec: Vec<TrackData> = track_map_copy.get(&selected_game.to_string()).unwrap().clone();
-                let track_choices: Vec<&TrackData> = track_vec.choose_multiple(&mut rand::thread_rng(), 8).collect();
-                println!("Choose: {:?}", track_choices);
-                //select the track
-                let selected_track = track_choices.choose(&mut rand::thread_rng()).cloned().cloned().unwrap();
-                println!("Track_name: {}", &selected_track.name);
-                println!("Track_game: {}", &selected_track.game);
-                println!("Track_url: {}", &selected_track.url);
-                play(&mut ctx, &msg, selected_track.url.to_string()).await;
-            
-                // //Construct game name question message
-                // let mut games_message = "Enter a game: \n".to_string();
-                // let mut letter_val = 65 as u8;
-                // let mut game_answer = "?".to_string();//(The letter allias)
-                // for game in &game_choices {
-                //     if game == selected_game {
-                //         game_answer = (letter_val as char).to_string();
-                //         println!("Game answer: {}", game_answer);
-                //     }
-                //     games_message.push(letter_val as char);
-                //     games_message += ": ";
-                //     games_message += game;
-                //     games_message += "\n";
-
-                //     letter_val += 1;
-                // }
-                // let sent_games_messages = send_direct_message_to_all(self, &ctx, games_message).await;
-
-                // async fn foo(ctx: &Context, message: &Message) {
-                //     message.react(ctx, '🇦').await.unwrap();
-                //     message.react(ctx, '🇧').await.unwrap();
-                //     message.react(ctx, '🇨').await.unwrap();
-                //     message.react(ctx, '🇩').await.unwrap();
-                //     message.react(ctx, '🇪').await.unwrap();
-                //     message.react(ctx, '🇫').await.unwrap();
-                //     message.react(ctx, '🇬').await.unwrap();
-                //     message.react(ctx, '🇭').await.unwrap();
-                // }
-
-                //Construct game name question message
-                let mut letter_number = 0;
-                let mut game_answer = "?".to_string();//(The letter allias)
-                let mut all_sent_games_messages = vec!(); 
-                for game in &game_choices {
-                    if game == selected_game {
-                        game_answer = (((65+letter_number)as u8) as char).to_string();
-                        println!("Game answer: {}", game_answer);
-                    }
-                    let mut game_message = "".to_string();
-                    
-                    game_message.push(((65+letter_number) as u8) as char);
-                    game_message += ": ";
-                    game_message += game;
-                    let sent_game_messages = send_direct_message_to_all(self, &ctx, game_message).await;
-                    
-                    // let collector = MessageCollectorBuilder::new(&ctx);
-
-                    let letter_reactions = ['🇦', '🇧', '🇨', '🇩', '🇪', '🇫', '🇬', '🇭'];//\u{1F1E6}
-                    {
-                        let mut futures = vec!();
-                        for message in &sent_game_messages {
-                            futures.push(letter_react(&ctx, message, letter_reactions[letter_number]));
+                        if let Err(why) = &msg.author.direct_message(&ctx, |m| m.content("Please only enter a single letter as your answer.")).await {
+                            println!("Error sending message: {:?}", why);
                         }
-                        futures::future::join_all(futures).await;
-                    }  
-                    all_sent_games_messages.push(sent_game_messages);
-
-                    async fn letter_react(ctx: &Context, message: &Message, letter: char) {
-                        message.react(ctx, letter).await.unwrap();
-                    }
-                    letter_number += 1;
-                }
-                // let sent_games_messages = send_direct_message_to_all(self, &ctx, game_message).await;
-  
-                // {
-                //     let mut futures = vec!();
-                //     for message in &sent_games_messages {
-                //         futures.push(foo(&ctx, message));
-                //     }
-                //     futures::future::join_all(futures).await;
-                // }
-                // {
-                //     let mut futures = vec!();
-                //     for message in &games_messages {
-                //         futures.push(async {
-                //             message.react(&ctx, '🇦').await.unwrap();
-                //             message.react(&ctx, '🇧').await.unwrap();
-                //             message.react(&ctx, '🇨').await.unwrap();
-                //             message.react(&ctx, '🇩').await.unwrap();
-                //             message.react(&ctx, '🇪').await.unwrap();
-                //             message.react(&ctx, '🇫').await.unwrap();
-                //             message.react(&ctx, '🇬').await.unwrap();
-                //             message.react(&ctx, '🇭').await.unwrap();
-                //         });
-                //     }
-                //     futures::future::join_all(futures);
-                // }
-                //Construct track name question message
-                let mut track_message = "Enter a track title: \n".to_string();
-                let mut letter_val = 65 as u8;
-                let mut track_answer = "?".to_string(); //(the letter alias)
-                for track in &track_choices {
-                    if track.name == selected_track.name {
-                        track_answer = (letter_val as char).to_string();
-                        println!("Track answer: {}", track_answer);
-                    }
-                    track_message.push(letter_val as char);
-                    //track_message += format!(": {}\n", track.name);
-                    track_message += ": ";
-                    track_message += &track.name;
-                    track_message += "\n";
-
-                    letter_val += 1;
-                }
-            
-                //Store track name question message for later 
-                {
-                    let mut state = self.state.lock().unwrap();
-                    state.round_track_message = track_message;
-                }
-                
-                //Send initial time left messages to each player
-                let timer_duration = 30;
-                let mut timer_messages = send_direct_message_to_all(self, &ctx, "Time left: ".to_string() + &timer_duration.to_string()).await;
-                let start_time = Instant::now();
-                //Periodically update the time left messages sent to each player
-                while start_time.elapsed().as_secs_f32() < timer_duration as f32 {
-                    // for game_messages in &all_sent_games_messages {
-                    //     for message in game_messages {
-                    //         let users_result = message.reaction_users(&ctx, '🇦', None, None).await;
-                    //         // println!("{:?}", &users.unwrap());
-                    //         if let Ok(users) = users_result {
-                    //             if users.len() > 1 {
-                    //                 //probs going to need this https://docs.rs/serenity/0.9.2/serenity/model/channel/struct.GuildChannel.html#method.await_reaction
-                    //                 let player_name = &users[0].name;//TODO: unsure if this will always get the user
-                    //                 let mut state = self.state.lock().unwrap();
-                    //                 if let Some(author) = state.players.get_mut(player_name) {
-                    //                     author.game_guess = "A".to_string().to_uppercase();
-                    //                 }
-                    //                 else {
-                    //                     println!("Unregistered player: {:?}", msg.author.name);
-                    //                 }
-                    //             }
-                    //         }
-  
-                            
-                    //     }
-                    // }
-   
-                    task::sleep(Duration::from_secs(1)).await;
-                    for message in &mut timer_messages {
-                        let time_left = (timer_duration as f32 - start_time.elapsed().as_secs_f32()).round();
-                        message.edit(&ctx, |m| { m.content("Time left: ".to_string() + &time_left.to_string()) }).await.unwrap();
                     }
                 }
-                
-                //Times up, send results
-                send_direct_message_to_all(self, &ctx, "Times up!".to_string()).await;
-                send_direct_message_to_all(self, &ctx, "Correct game answer was: ".to_string() + selected_game).await;
-                send_direct_message_to_all(self, &ctx, "Correct track answer was: ".to_string() + &selected_track.name).await;
-                let mut scoreboard_message = "Scores:".to_string();  
-                {
-                    let mut state = self.state.lock().unwrap();
-                    let players = &mut state.players;
-                    scoreboard_message += "\n";
-                    for (player_name, player_details) in players.iter_mut() {
-                        println!("Player name: {:?}", player_name);
-                        println!("Players Game guess: {:?}", player_details.game_guess);
-                        println!("Players Track guess: {:?}", player_details.track_guess);
-                        let mut round_score = 0;
-                        if player_details.game_guess == game_answer {
-                            player_details.score += 1;
-                            round_score += 1;
-                        }
-                        if player_details.track_guess == track_answer {
-                            player_details.score += 1;
-                            round_score += 1;
-                        }
-                        scoreboard_message += &player_name.to_string();
-                        scoreboard_message += ": ";
-                        scoreboard_message += &player_details.score.to_string();
-                        scoreboard_message += " (+";
-                        scoreboard_message += &round_score.to_string();
-                        scoreboard_message += ")";
-                        scoreboard_message += "\n";
-                    }
-                }
-                if let Err(why) = msg.channel_id.say(&ctx.http, scoreboard_message).await {
-                    println!("Error sending message: {:?}", why);
-                }
-            }
+            };
         }
     }
 
@@ -394,13 +302,14 @@ impl EventHandler for Handler {
     // In this case, just print what the current user's username is.
     async fn ready(&self, _: Context, ready: Ready) {
         println!("{} is connected!", ready.user.name);
-        
+        println!("{:?} private channells", ready.private_channels);
         // Client ID is from https://discordapp.com/developers/applications
         // Permissions are generated from the bot section of that same page
         println!("connection url: https://discordapp.com/api/oauth2/authorize?client_id=657021258927439890&scope=bot&permissions=251968");
     }
 }
 
+//Sends each message to its specified player
 async fn send_direct_messages(ctx: &Context, direct_messages: &[DirectMessage]) -> Vec<Message> {
     let mut sent_messages = Vec::new();
     for direct_message in direct_messages {
@@ -411,6 +320,8 @@ async fn send_direct_messages(ctx: &Context, direct_messages: &[DirectMessage]) 
     return sent_messages;
 }
 
+
+//Sends a particular message to each player
 async fn send_direct_message_to_all(handler: &Handler, ctx: &Context, message: String) -> Vec<Message> {
     let mut direct_messages = vec!();
     {
@@ -494,7 +405,13 @@ async fn play(ctx: &mut Context, msg: &Message, url: String) {
         return;
     }
 
-    let guild = msg.guild(&ctx.cache).await.unwrap();
+    let guild = match msg.guild(&ctx.cache).await {
+        Some(guild) => guild,
+        None => {
+            check_msg(msg.channel_id.say(&ctx.http, "Message not from a server.").await);
+            return;
+        }
+    };
     let guild_id = guild.id;
 
 
