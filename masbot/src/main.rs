@@ -37,7 +37,8 @@ struct State {
     // round_track: Option<TrackData>,
     // round_game_answer: String,//Letter
     // round_track_answer: String,//Letter
-    round_track_message: String
+    round_track_message: String,
+    max_timer_duration: i32
 }
 
 //#[derive(Serialize)]
@@ -91,8 +92,20 @@ impl EventHandler for Handler {
                     if tokens[0] == ".play" {
                         if let Some(next_token) = tokens.get(1) {
                             play(&mut ctx, &msg, next_token.to_string()).await;
-                            // block_on(play(&mut ctx, &msg, next_token.to_string()));
                         }                
+                    }
+                    if tokens[0] == ".timer" {
+                        if let Some(next_token) = tokens.get(1) {
+                            if let Ok(new_timer_duration) = next_token.parse::<i32>() {
+                                {
+                                    let mut state = self.state.lock().unwrap();
+                                    state.max_timer_duration = new_timer_duration;
+                                }
+                                if let Err(why) = msg.channel_id.say(&ctx.http, "Timer duration set to ".to_string() + &new_timer_duration.to_string()).await {
+                                    println!("Error sending message: {:?}", why);
+                                }
+                            }
+                        }
                     }
                     if tokens[0] == ".start" || tokens[0] == ".s" || tokens[0] == ".next" || tokens[0] == ".n" {             
                         let track_map_copy = get_track_map_copy(self);
@@ -172,7 +185,11 @@ impl EventHandler for Handler {
                         }
                         
                         //Send initial time left messages to each player
-                        let timer_duration = 30;
+                        
+                        let timer_duration = { 
+                            let state = self.state.lock().unwrap();
+                            state.max_timer_duration
+                        };
                         let mut timer_messages = send_direct_message_to_all(self, &ctx, "Time left: ".to_string() + &timer_duration.to_string()).await;
                         let start_time = Instant::now();
                         //Periodically update the time left messages sent to each player
@@ -358,7 +375,8 @@ async fn main() {
                 map: HashMap::new(), 
                 players: HashMap::new(),  
                 track_map: HashMap::new(),
-                round_track_message: "".to_string()
+                round_track_message: "".to_string(),
+                max_timer_duration: 30
             }
         )
     })

@@ -16,5 +16,7 @@ When the bot is running it will respond to certain commands in the server chat.
 
 ".start" or ".next" will start the next round, the bot will select and play a track through the voice channel. The players then have to guess what it is.
 
+".timer [number]" will set the timer duration for future rounds to the value of [number]
+
 The players should submit the letter corresponding to the correct answer in response to the bot's direct messages.
 Once a game name has been selected the player will be given choices for the track name.
