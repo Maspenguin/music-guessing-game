@@ -18,5 +18,7 @@ When the bot is running it will respond to certain commands in the server chat.
 
 ".timer [number]" will set the timer duration for future rounds to the value of [number]
 
+".autonext" will toggle autonext. When autonext is on, it will skip to the next song as soon has the previous song has been scored. Autonext is on by default.
+
 The players should submit the letter corresponding to the correct answer in response to the bot's direct messages.
 Once a game name has been selected the player will be given choices for the track name.
